@@ -1,0 +1,85 @@
+@Service
+public class SeguridadService {
+    @Autowired
+    private UsuarioRepository usuarioRepo;
+
+    public boolean login(String correo, String password) {
+        Usuario u = usuarioRepo.findByCorreo(correo);
+        if(u == null) return false;
+
+        if(u.getIntentos() >= 3) {
+            throw new RuntimeException("Usuario bloqueado");
+        }
+
+        if(BCrypt.checkpw(password, u.getPassword())) {
+            u.setIntentos(0);
+            usuarioRepo.save(u);
+            return true;
+        } else {
+            u.setIntentos(u.getIntentos() + 1);
+            usuarioRepo.save(u);
+            return false;
+        }
+    }
+}
+
+
+
+
+Compras y Devoluciones:
+@Service
+public class ComprasService {
+    @Autowired
+    private CompraRepository compraRepo;
+    @Autowired
+    private ProductoRepository productoRepo;
+    @Autowired
+    private DevolucionRepository devolucionRepo;
+    @Autowired
+    private KardexRepository kardexRepo;
+
+    public void devolverProducto(int compraId, int productoId, int cantidad) {
+        Devolucion d = new Devolucion(compraId, productoId, cantidad, LocalDate.now());
+        devolucionRepo.save(d);
+
+        Producto p = productoRepo.findById(productoId).get();
+        p.setStock(p.getStock() - cantidad);
+        productoRepo.save(p);
+
+        kardexRepo.save(new Kardex(productoId, "Devolución", -cantidad, LocalDate.now()));
+    }
+}
+
+
+
+Ventas y Pagos:
+@Service
+public class VentasService {
+    @Autowired
+    private VentaRepository ventaRepo;
+    @Autowired
+    private ProductoRepository productoRepo;
+    @Autowired
+    private KardexRepository kardexRepo;
+
+    public Venta registrarVenta(String cliente, List<Item> items) {
+        Venta v = new Venta(cliente, LocalDate.now(), calcularTotal(items));
+        ventaRepo.save(v);
+
+        for(Item i : items) {
+            Producto p = productoRepo.findById(i.getProductoId()).get();
+            p.setStock(p.getStock() - i.getCantidad());
+            productoRepo.save(p);
+
+            kardexRepo.save(new Kardex(p.getId(), "Venta", -i.getCantidad(), LocalDate.now()));
+        }
+
+        return v;
+    }
+
+    private double calcularTotal(List<Item> items) {
+        return items.stream().mapToDouble(i -> i.getPrecio() * i.getCantidad()).sum();
+    }
+}
+
+
